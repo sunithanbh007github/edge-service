@@ -1,0 +1,101 @@
+server:
+  port: 9000
+  netty:
+    connection-timeout: 2s
+    idle-timeout: 15s
+  shutdown: graceful
+
+spring:
+  application:
+    name: edge-service
+  lifecycle:
+    timeout-per-shutdown-phase: 15s
+  config:
+    import: "optional:configserver:"
+  cloud:
+    config:
+      uri: http://localhost:8888
+      request-connect-timeout: 5000 # 5s
+      request-read-timeout: 5000 # 5s
+      fail-fast: false # In production, set to true
+      retry:
+        max-attempts: 6
+        initial-interval: 1000 # 1s
+        max-interval: 2000 # 2s
+        multiplier: 1.1
+    gateway:
+      httpclient: #Configuration properties for the HTTP client
+        connect-timeout: 2000 # 2s #Time limit for a connection to be established (in ms)
+        response-timeout: 5s #Time limit for a response to be received (Duration)
+        pool:
+          type: elastic #Type of connection pool (elastic, fixed, or disabled)
+          max-idle-time: 15s #Idle time after which the communication channel will be closed
+          max-life-time: 60s #Time after which the communication channel will be closed
+      default-filters: #A list of default filters
+        - SaveSession #Ensures the session data is saved before forwarding a request downstream
+        - name: RequestRateLimiter
+          args:
+            redis-rate-limiter:
+              replenishRate: 10 #Number of tokens dripped in the bucket each second
+              burstCapacity: 20 #Allows request bursts of up to 20 requests
+              requestedTokens: 1 #How many tokens a request costs
+        - name: Retry #The name of the filter
+          args:
+            retries: 3 #Maximum of 3 retry attempts
+            methods: GET #Retries only GET requests
+            series: SERVER_ERROR #Retries only when 5XX errors
+            exceptions: java.io.IOException, java.util.concurrent.TimeoutException #Retries only when the given exceptions are thrown
+            backoff: #Retries with a delay computed as ?firstBackoff * (factor ^ n)?
+              firstBackoff: 50ms
+              maxBackOff: 500ms
+              factor: 2
+              basedOnPreviousValue: false
+      routes: #A list of route definitions
+        - id: catalog-route #The route ID
+          uri: ${CATALOG_SERVICE_URL:http://localhost:9001}/books
+          predicates:
+            - Path=/books/** #The predicate is a path to match
+          filters:
+            - name: CircuitBreaker #Name of the filter
+              args:
+                name: catalogCircuitBreaker #Name of the circuit breaker
+                fallbackUri: forward:/catalog-fallback #Forwards request to this URI when the circuit is open
+        - id: order-route
+          uri: ${ORDER_SERVICE_URL:http://localhost:9002}/orders #The URI value comes from an environment variable, or else from the default.
+          predicates:
+            - Path=/orders/**
+          filters:
+            - name: CircuitBreaker #No fallback defined for this circuit breaker.
+              args:
+                name: orderCircuitBreaker
+  data:
+    redis:
+      connect-timeout: 2s #Time limit for a connection to be established
+      host: localhost #Default Redis host
+      port: 6379 #Default Redis port
+      timeout: 1s #Time limit for a response to be received
+  session:
+    store-type: redis
+    timeout: 10m
+    redis:
+      namespace: polar:edge
+
+resilience4j:
+  circuitbreaker:
+    configs:
+      default: #Default configuration bean for all circuit breakers
+        slidingWindowSize: 20 #The size of the sliding window used to record the outcome of calls when the circuit is closed
+        permittedNumberOfCallsInHalfOpenState: 5 #Number of permitted calls when the circuit is half-open
+        failureRateThreshold: 50 #When the failure rate is above the threshold, the circuit becomes open.
+        waitDurationInOpenState: 15000 #Waiting time before moving from open to half-open (ms)
+  timelimiter:
+    configs:
+      default: #Default configuration bean for all time limiters
+        timeoutDuration: 5s #Configures a timeout (seconds)
+
+#logging:
+#  level:
+#    io:
+#      github:
+#        resilience4j: DEBUG
+
