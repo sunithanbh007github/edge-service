@@ -1,0 +1,16 @@
+apiVersion: networking.k8s.io/v1 #The API version for Ingress objects
+kind: Ingress #The type of object to create
+metadata:
+  name: polar-ingress #The name of the Ingress
+spec:
+  ingressClassName: nginx #Configures the ingress controller responsible for managing this object
+  rules:
+    - http:
+        paths: #Ingress rules for HTTP traffic
+          - path: / #A default rule for all requests
+            pathType: Prefix
+            backend:
+              service:
+                name: edge-service #The name of the Service object where traffic should be forwarded
+                port:
+                  number: 80 #The port number for the Service where traffic should be forwarded
