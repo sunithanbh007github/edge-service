@@ -50,8 +50,8 @@ dependencyManagement {
 bootBuildImage {
 	imageName = "${project.name}"
 	environment = [
-			'HTTP_PROXY' : 'http.docker.internal:3128',
-			'HTTPS_PROXY' : 'http.docker.internal:3128',
+			//'HTTP_PROXY' : 'http.docker.internal:3128',
+			//'HTTPS_PROXY' : 'http.docker.internal:3128',
 			'BP_JVM_VERSION' : '17.*'
 	]
 
