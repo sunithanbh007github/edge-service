@@ -11,9 +11,10 @@ spring:
   lifecycle:
     timeout-per-shutdown-phase: 15s
   config:
-    import: "optional:configserver:"
+    import: "" # When using Config Service, add "optional:configserver:"
   cloud:
     config:
+      enabled: false # When using Config Service, set to true
       uri: http://localhost:8888
       request-connect-timeout: 5000 # 5s
       request-read-timeout: 5000 # 5s
@@ -33,6 +34,7 @@ spring:
           max-life-time: 60s #Time after which the communication channel will be closed
       default-filters: #A list of default filters
         - SaveSession #Ensures the session data is saved before forwarding a request downstream
+        - TokenRelay #Enables the propagation of the Access Token when calling a downstream service
         - name: RequestRateLimiter
           args:
             redis-rate-limiter:
@@ -51,6 +53,10 @@ spring:
               factor: 2
               basedOnPreviousValue: false
       routes: #A list of route definitions
+        - id: spa-route
+          uri: ${SPA_URL:http://localhost:9004}
+          predicates:
+            - Path=/,/*.css,/*.js,/favicon.ico #The predicate is a list of paths matching the root endpoint and the SPA static resources.
         - id: catalog-route #The route ID
           uri: ${CATALOG_SERVICE_URL:http://localhost:9001}/books
           predicates:
@@ -79,7 +85,18 @@ spring:
     timeout: 10m
     redis:
       namespace: polar:edge
-
+  security:
+    oauth2:
+      client:
+        registration:
+          keycloak: #The name identifying the Client registration in Spring Security (called “registrationId”). It can be any string.
+            client-id: edge-service #The OAuth2 Client identifier as defined in Keycloak
+            client-secret: polar-keycloak-secret #The shared secret used by the Client to authenticate with Keycloak
+            scope: openid,roles #The list of scopes the Client would like to have access to. The openid scope triggers OIDC authentication.
+        provider:
+          keycloak: #The same name used as “registrationId” a few lines above
+            issuer-uri: http://localhost:8080/realms/PolarBookshop #The Keycloak URL providing information about all the relevant
+                                          # OAuth2 and OIDC endpoints for the specific realm
 resilience4j:
   circuitbreaker:
     configs:
@@ -92,6 +109,42 @@ resilience4j:
     configs:
       default: #Default configuration bean for all time limiters
         timeoutDuration: 5s #Configures a timeout (seconds)
+
+logging:
+  group:
+    circuitbreaker: io.github.resilience4j, org.springframework.cloud.circuitbreaker #Collects multiple loggers into a group to apply the same configuration
+  level:
+    circuitbreaker: info #Sets an “info” logger for both Resilience4J and Spring Cloud Circuit Breaker, which is easy to change if you need to debug the circuit breakers
+  pattern:
+    level: "%5p [${spring.application.name},%X{trace_id},%X{span_id}]"
+
+info:
+  system: Polar Bookshop
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: configprops, env, gateway, health, heapdump, info, loggers, mappings, prometheus
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,redis #The readiness probe will combine the application’s readiness state and Redis’s availability.
+  info:
+    env:
+      enabled: true
+    java:
+      enabled: true
+    os:
+      enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 #logging:
 #  level:

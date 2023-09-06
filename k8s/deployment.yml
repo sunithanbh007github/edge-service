@@ -13,6 +13,10 @@ spec:
     metadata:
       labels:
         app: edge-service
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/path: /actuator/prometheus
+        prometheus.io/port: "9000"
     spec:
       containers:
         - name: edge-service
@@ -29,7 +33,17 @@ spec:
               value: http://catalog-service
             - name: ORDER_SERVICE_URL
               value: http://order-service
-            - name: SPRING_CLOUD_CONFIG_URI
-              value: http://config-service
-            - name: SPRING_DATA_REDIS_HOST
-              value: polar-redis
+            - name: SPA_URL
+              value: http://polar-ui
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 9000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            readinessProbe:
+              httpGet:
+                path: /actuator/health/readiness
+                port: 9000
+              initialDelaySeconds: 5
+              periodSeconds: 15
